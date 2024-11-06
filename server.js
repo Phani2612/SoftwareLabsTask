@@ -404,7 +404,7 @@ App.post('/login', async function (req, res) {
         if (!userExists.UT_Password) {
             res.status(401).json({
                 message: 'Account exists, but no password is set. Please log in with your Google account.',
-                redirect_url: 'http://localhost:3000/login' // Update with your Google login route
+                redirect_url: 'https://softwarelabsfrontend.onrender.com/login' // Update with your Google login route
             });
 
 
@@ -458,7 +458,7 @@ else{
 
             res.status(200).json({
                 message: 'User authenticated successfully',
-                redirect_url: 'http://localhost:3000/dashboard',
+                redirect_url: 'https://softwarelabsfrontend.onrender.com/dashboard',
                 SESSION_INFO : SESSIONID_info
             });
         } else {
@@ -471,7 +471,7 @@ else{
         // User does not exist, suggest they register an account
         res.status(404).json({
             message: 'User not found. Redirecting to registration page.',
-            redirect_url: 'http://localhost:3000/register'
+            redirect_url: 'https://softwarelabsfrontend.onrender.com/register'
         });
     }
 });
@@ -553,7 +553,7 @@ App.post('/forgot-password', async (req, res) => {
 
    
     // Send email with reset link
-    const resetLink = `http://localhost:3000/reset-password?token=${token}`;
+    const resetLink = `https://softwarelabsfrontend.onrender.com/reset-password?token=${token}`;
     const mailOptions = {
         to: email,
         subject: 'Password Reset Request',
