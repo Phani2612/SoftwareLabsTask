@@ -478,33 +478,56 @@ else{
 
 
 
-App.post('/store-user' , async function(req , res)
-{
+
+
+
+
+App.post('/store-user', async function (req, res) {
     const { username, email, uid, profilePic } = req.body;
+    const sessionId = req.sessionID;
 
     try {
         // Check if user already exists
-        let user = await User_Table.findOne({ UT_Email : email });
+        let user = await User_Table.findOne({ UT_Email: email });
         if (!user) {
             // If user doesn't exist, create a new user including the profile picture URL
             user = new User_Table({
-           
-                UT_Email : email,
-
-                UT_Photo : profilePic,
-
-                
-
+                UT_Email: email,
+                UT_Photo: profilePic
             });
             await user.save();
-            res.status(201).send({ message: 'User created successfully' });
+
+            // Create session data
+            const sessionData = new Session({
+                S_User_ID: user._id,
+                S_Expiry: Date.now() + 120 * 60 * 1000, // 2 hours expiry
+                S_Token: sessionId
+            });
+            await sessionData.save();
+
+            // Set the session token in HttpOnly cookie for client-side security
+            res.cookie('sessionToken', sessionId, { httpOnly: true, secure: true, maxAge: 120 * 60 * 1000 });
+
+            return res.status(201).send({ message: 'User created successfully', session: sessionId });
         } else {
-            res.status(200).send({ message: 'User already exists' });
+            // If user exists, update their session expiry
+            let sessionInformation = await Session.findOne({ S_User_ID: user._id });
+            sessionInformation.S_Expiry = Date.now() + 120 * 60 * 1000; // 2 hours expiry
+            sessionInformation.S_Token = sessionId;
+
+
+            await sessionInformation.save();
+
+            // Set the session token in HttpOnly cookie for client-side security
+            res.cookie('sessionToken', sessionId, { httpOnly: true, secure: true, maxAge: 120 * 60 * 1000 });
+
+            return res.status(200).send({ message: 'User already exists', session: sessionId });
         }
     } catch (error) {
-        res.status(500).send({ error: 'Error storing user in database' });
+        console.error('Error storing user in database:', error);
+        return res.status(500).send({ error: 'Error storing user in database' });
     }
-})
+});
 
 
 
