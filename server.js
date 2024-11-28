@@ -32,7 +32,13 @@ const upload1 = multer({ storage });
 const crypto = require('crypto');  // To generate a unique token
 
 
+const Frontend_URL = process.env.FRONTEND_URL
+
 const session = require("express-session");
+
+
+
+
 
 App.use(
     session({
@@ -81,7 +87,45 @@ const User_Schema = new mongoose.Schema({
      UT_Photo : {
 
          type : String
-     }
+     },
+
+     UT_Bio : {
+
+         type : String 
+     },
+
+     UT_Role : {
+
+         type : String 
+     },
+
+     UT_IMDB : {
+
+         type : String 
+     },
+
+     UT_Twitter : {
+
+        type : String 
+    },
+
+
+    UT_Instagram : {
+
+        type : String 
+    },
+
+    
+    UT_Threads : {
+
+        type : String 
+    },
+
+    UT_Full : {
+
+         type : String
+    }
+
 
 })
 
@@ -403,8 +447,8 @@ App.post('/login', async function (req, res) {
 // Check if the user exists but does not have a password (Google account login case)
         if (!userExists.UT_Password) {
             res.status(401).json({
-                message: 'Account exists, but no password is set. Please log in with your Google account.',
-                redirect_url: 'http://localhost:3000/login' // Update with your Google login route
+                message: 'Account exists. Please go back and log in with your Google account.',
+                redirect_url: `${Frontend_URL}/login` // Update with your Google login route
             });
 
 
@@ -458,7 +502,7 @@ else{
 
             res.status(200).json({
                 message: 'User authenticated successfully',
-                redirect_url: 'http://localhost:3000/dashboard',
+                redirect_url: `${Frontend_URL}/dashboard`,
                 SESSION_INFO : SESSIONID_info
             });
         } else {
@@ -470,43 +514,138 @@ else{
     } else {
         // User does not exist, suggest they register an account
         res.status(404).json({
-            message: 'User not found. Redirecting to registration page.',
-            redirect_url: 'http://localhost:3000/register'
+            message: 'User not found.please go back and register yourself.',
+            redirect_url: `${Frontend_URL}/register`
         });
     }
 });
 
 
 
-App.post('/store-user' , async function(req , res)
-{
+
+App.put('/login', async (req, res) => {
+    const { fullName, email, bio, role, imdbUrl, twitterUrl, instagramUrl, threadsUrl } = req.body;
+
+    // Check if email is provided
+    if (!email) {
+        return res.status(400).send('Email is required');
+    }
+
+    try {
+        // Find the user by email
+        const Userdetail = await User_Table.findOne({ UT_Email: email });
+
+        if (!Userdetail) {
+            return res.status(404).send('User not found');
+        }
+
+        // Update the user fields with the new data, if provided
+        Userdetail.UT_Bio = bio || Userdetail.UT_Bio;
+        Userdetail.UT_Role = role || Userdetail.UT_Role;
+        Userdetail.UT_IMDB = imdbUrl || Userdetail.UT_IMDB;
+        Userdetail.UT_Twitter = twitterUrl || Userdetail.UT_Twitter;
+        Userdetail.UT_Instagram = instagramUrl || Userdetail.UT_Instagram;
+        Userdetail.UT_Threads = threadsUrl || Userdetail.UT_Threads;
+        Userdetail.UT_Full = fullName || Userdetail.UT_Full
+        Userdetail.UT_Photo = req.body.photo || Userdetail.UT_Photo; // Optional photo, if provided
+        Userdetail.UT_Phone = req.body.phone || Userdetail.UT_Phone; // Optional phone, if provided
+        Userdetail.UT_Password = req.body.password || Userdetail.UT_Password; // Optional password, if provided
+
+        // Save the updated user data
+        await Userdetail.save();
+
+        // Send a success response
+        res.status(200).send('User data updated successfully');
+    } catch (error) {
+        console.error(error);
+        res.status(500).send('Error updating user data');
+    }
+});
+
+
+
+
+App.get('/user/:email', async (req, res) => {
+    const { email } = req.params;
+    
+    try {
+      const user = await User_Table.findOne({ UT_Email: email });
+      
+      if (!user) {
+        return res.status(404).send('User not found');
+      }
+  
+      res.status(200).json({
+        fullName: user.UT_Full,
+        email: user.UT_Email,
+        bio: user.UT_Bio,
+        role: user.UT_Role,
+        imdbUrl: user.UT_IMDB,
+        twitterUrl: user.UT_Twitter,
+        instagramUrl: user.UT_Instagram,
+        threadsUrl: user.UT_Threads,
+        photo: user.UT_Photo,
+        // Add any other fields you want to return
+      });
+    } catch (error) {
+      console.error(error);
+      res.status(500).send('Error fetching user data');
+    }
+  });
+
+
+
+
+
+
+
+
+App.post('/store-user', async function (req, res) {
     const { username, email, uid, profilePic } = req.body;
+    const sessionId = req.sessionID;
 
     try {
         // Check if user already exists
-        let user = await User_Table.findOne({ UT_Email : email });
+        let user = await User_Table.findOne({ UT_Email: email });
         if (!user) {
             // If user doesn't exist, create a new user including the profile picture URL
             user = new User_Table({
-           
-                UT_Email : email,
-
-                UT_Photo : profilePic,
-
-                
-
+                UT_Email: email,
+                UT_Photo: profilePic
             });
             await user.save();
-            res.status(201).send({ message: 'User created successfully' });
+
+            // Create session data
+            const sessionData = new Session({
+                S_User_ID: user._id,
+                S_Expiry: Date.now() + 120 * 60 * 1000, // 2 hours expiry
+                S_Token: sessionId
+            });
+            await sessionData.save();
+
+            // Set the session token in HttpOnly cookie for client-side security
+            res.cookie('sessionToken', sessionId, { httpOnly: true, secure: true, maxAge: 120 * 60 * 1000 });
+
+            return res.status(201).send({ message: 'User created successfully', session: sessionId });
         } else {
-            res.status(200).send({ message: 'User already exists' });
+            // If user exists, update their session expiry
+            let sessionInformation = await Session.findOne({ S_User_ID: user._id });
+            sessionInformation.S_Expiry = Date.now() + 120 * 60 * 1000; // 2 hours expiry
+            sessionInformation.S_Token = sessionId;
+
+
+            await sessionInformation.save();
+
+            // Set the session token in HttpOnly cookie for client-side security
+            res.cookie('sessionToken', sessionId, { httpOnly: true, secure: true, maxAge: 120 * 60 * 1000 });
+
+            return res.status(200).send({ message: 'User already exists', session: sessionId });
         }
     } catch (error) {
-        res.status(500).send({ error: 'Error storing user in database' });
+        console.error('Error storing user in database:', error);
+        return res.status(500).send({ error: 'Error storing user in database' });
     }
-})
-
-
+});
 
 
 
@@ -530,7 +669,7 @@ App.post('/forgot-password', async (req, res) => {
 
    
     // Send email with reset link
-    const resetLink = `http://localhost:3000/reset-password?token=${token}`;
+    const resetLink = `${Frontend_URL}/reset-password?token=${token}`;
     const mailOptions = {
         to: email,
         subject: 'Password Reset Request',
@@ -656,44 +795,6 @@ App.get('/get-project/:OID', async (req, res) => {
 
 
 
-// App.post("/upload-cover-photo", upload1.single("coverPhoto"), async (req, res) => {
-//     const { OID } = req.body;
-
-//     console.log(OID)
-
-//     if (!req.file) return res.status(400).send("No file uploaded.");
-
-//     try {
-//         // Find the document by OID
-//         const project = await Create_Project.findById({ _id: OID });
-        
-//         if (!project) {
-//             return res.status(404).send("Project not found.");
-//         }
-
-//         // Update the cover photo with the file buffer
-//         project.CP_Cover_Photo = req.file.buffer;
-
-
-        
-
-//         // Save the updated document
-//         await project.save();
-
-//         const base64Image = req.file.buffer.toString('base64');
-//         const imageMimeType = req.file.mimetype;
-
-//         console.log('Image uploaded successfully');
-//         res.status(200).send({
-//             message: "Cover photo uploaded successfully",
-//             coverImage: `data:${imageMimeType};base64,${base64Image}`
-//         });
-//     } catch (error) {
-//         console.error("Error saving cover photo:", error);
-//         res.status(500).send("Internal Server Error");
-//     }
-// });
-
 
 
 App.post("/upload-cover-photo", upload1.single("coverPhoto"), async (req, res) => {
@@ -780,35 +881,6 @@ App.get('/getscript/:User/:OID', async function(req, res) {
 
 
 
-// App.get('/getscript/:User', async function(req, res) {
-//     const User = req.params.User;
-
-//     try {
-//         const scripts = await Screen_Play.find({ SP_User: User }); // Fetch the scripts based on the user
-
-    
-
-//         res.json(scripts); // Send the filtered data back to the frontend
-//     } catch (error) {
-//         console.error('Error fetching scripts:', error);
-//         res.status(500).json({ message: 'Error fetching scripts' }); // Send error response if fetching fails
-//     }
-// });
-
-
-// App.get('/gettreatment/:User', async function(req, res) {
-//     const User = req.params.User;
-
-   
-
-//     try {
-//         const scripts = await Treatment.find({ T_User : User }); // Fetch the scripts based on the user
-//         res.json(scripts); // Send the filtered data back to the frontend
-//     } catch (error) {
-//         console.error('Error fetching scripts:', error);
-//         res.status(500).json({ message: 'Error fetching scripts' }); // Send error response if fetching fails
-//     }
-// });
 
 
 
@@ -842,17 +914,7 @@ App.get('/gettreatment/:User/:OID', async function(req, res) {
 });
 
 
-// App.get('/getbreakdown/:User', async function(req, res) {
-//     const User = req.params.User;
 
-//     try {
-//         const scripts = await Breakdown.find({ B_User : User }); // Fetch the scripts based on the user
-//         res.json(scripts); // Send the filtered data back to the frontend
-//     } catch (error) {
-//         console.error('Error fetching scripts:', error);
-//         res.status(500).json({ message: 'Error fetching scripts' }); // Send error response if fetching fails
-//     }
-// });
 
 App.get('/getbreakdown/:User/:OID', async function(req, res) {
     const User = req.params.User;
@@ -1123,7 +1185,7 @@ App.post('/api/generation' , async function(req,res)
     The title of the screenplay is "${title}". 
     The synopsis is: "${synopsis}". 
     Please write a detailed scene that captures the essence of the story, ensuring it follows proper film style screenplay formatting, with numbered pages. 
-    The screenplay should be approximately three pages long.`;
+    The screenplay should be approximately 10 pages long.`;
 
 
     try {
@@ -1338,6 +1400,7 @@ App.post('/store-treatment', async (req, res) => {
 });
 
 
+
 // treatment generation by AI
 App.post('/treatment/generation', async function (req, res) {
     const { OID, actOneText , TID } = req.body;
@@ -1427,56 +1490,6 @@ App.get('/breakdown/:OID', async (req, res) => {
 
 
 
-//The below is for document processing
-// App.post('/generate', async function(req, res) {
-
-//     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-//     try {
-//         // Upload the file directly by its name since it's in the same directory
-//         const uploadResponse = await fileManager.uploadFile("lekha.pdf", {
-//             mimeType: "application/pdf",
-//             displayName: "Gemini 1.5 PDF",
-//         });
-
-//         if (!uploadResponse || !uploadResponse.file) {
-//             throw new Error("File upload failed");
-//         }
-
-//         console.log(`Uploaded file ${uploadResponse.file.displayName} as: ${uploadResponse.file.uri}`);
-
-//         // Generate content using the uploaded file
-//         const result = await model.generateContent([
-//             {
-//                 fileData: {
-//                     mimeType: uploadResponse.file.mimeType,
-//                     fileUri: uploadResponse.file.uri,
-//                 },
-//             },
-//             { text: "Can you summarize this document as a bulleted list?" },
-//         ]);
-
-      
-
-//         // Output generated content
-//         if (result && result.response && result.response.text) {
-
-
-//             const generatedText = await result.response.text(); // Call the text function to get the content
-//             console.log("Generated content:", generatedText);
-//             // res.json({ summary: generatedText });
-//             // res.json({ summary: result.response.text });
-//         } else {
-//             throw new Error("Content generation failed: No text returned");
-//         }
-//     } catch (error) {
-//         console.error("Error processing request:", error);
-//         res.status(500).json({ error: error.message });
-//     }
-// });
-
-
-
 
 
 App.post('/break_generate/document', upload.single('file'), async function (req, res) {
@@ -1538,6 +1551,28 @@ App.post('/break_generate/document', upload.single('file'), async function (req,
         // fs.unlinkSync(filePath);
     }
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
